@@ -16,6 +16,7 @@ prep:
 clean:
 	for F in $(CLEANFILES); do rm -f $(OBJ)$$F; done
 	rm -rf $(OBJ).putty
+	rm -rf $(OBJ)pam-ssh-agent-test.d
 
 distclean:	clean
 
@@ -92,6 +93,7 @@ LTESTS= 	connect \
 		allow-deny-users \
 		authinfo \
 		sshsig \
+		pam-ssh-agent \
 		keygen-comment
 
 

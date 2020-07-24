@@ -29,6 +29,8 @@ PRIVSEP_PATH=@PRIVSEP_PATH@
 SSH_PRIVSEP_USER=@SSH_PRIVSEP_USER@
 STRIP_OPT=@STRIP_OPT@
 TEST_SHELL=@TEST_SHELL@
+PAM_SSH_AGENT=@PAM_SSH_AGENT@
+PAM_SSH_AGENT_TEST=@PAM_SSH_AGENT_TEST@
 
 PATHS= -DSSHDIR=\"$(sysconfdir)\" \
 	-D_PATH_SSH_PROGRAM=\"$(SSH_PROGRAM)\" \
@@ -68,7 +70,7 @@ MKDIR_P=@MKDIR_P@
 
 .SUFFIXES: .lo
 
-TARGETS=ssh$(EXEEXT) sshd$(EXEEXT) ssh-add$(EXEEXT) ssh-keygen$(EXEEXT) ssh-keyscan${EXEEXT} ssh-keysign${EXEEXT} ssh-pkcs11-helper$(EXEEXT) ssh-agent$(EXEEXT) scp$(EXEEXT) sftp-server$(EXEEXT) sftp$(EXEEXT) ssh-sk-helper$(EXEEXT)
+TARGETS=ssh$(EXEEXT) sshd$(EXEEXT) ssh-add$(EXEEXT) ssh-keygen$(EXEEXT) ssh-keyscan${EXEEXT} ssh-keysign${EXEEXT} ssh-pkcs11-helper$(EXEEXT) ssh-agent$(EXEEXT) scp$(EXEEXT) sftp-server$(EXEEXT) sftp$(EXEEXT) ssh-sk-helper$(EXEEXT) $(PAM_SSH_AGENT)
 
 XMSS_OBJS=\
 	ssh-xmss.o \
@@ -152,6 +154,9 @@ SFTPSERVER_OBJS=sftp-common.o sftp-server.o sftp-server-main.o
 
 SFTP_OBJS=	sftp.o sftp-client.o sftp-common.o sftp-glob.o progressmeter.o
 
+# These need to be compiled with -fPIC, so they are treated differently.
+PAM_SSH_AGENT_OBJS=pam-ssh-agent.lo $(SKHELPER_OBJS:.o=.lo)
+
 MANPAGES	= moduli.5.out scp.1.out ssh-add.1.out ssh-agent.1.out ssh-keygen.1.out ssh-keyscan.1.out ssh.1.out sshd.8.out sftp-server.8.out sftp.1.out ssh-keysign.8.out ssh-pkcs11-helper.8.out ssh-sk-helper.8.out sshd_config.5.out ssh_config.5.out
 MANPAGES_IN	= moduli.5 scp.1 ssh-add.1 ssh-agent.1 ssh-keygen.1 ssh-keyscan.1 ssh.1 sshd.8 sftp-server.8 sftp.1 ssh-keysign.8 ssh-pkcs11-helper.8 ssh-sk-helper.8 sshd_config.5 ssh_config.5
 MANTYPE		= @MANTYPE@
@@ -187,6 +192,7 @@ all: configure-check $(CONFIGFILES) $(MANPAGES) $(TARGETS)
 $(LIBSSH_OBJS): Makefile.in config.h
 $(SSHOBJS): Makefile.in config.h
 $(SSHDOBJS): Makefile.in config.h
+$(PAM_SSH_AGENT_OBJS): Makefile.in config.h
 configure-check: $(srcdir)/configure
 
 $(srcdir)/configure: configure.ac aclocal.m4
@@ -198,11 +204,18 @@ $(srcdir)/configure: configure.ac aclocal.m4
 
 LIBCOMPAT=openbsd-compat/libopenbsd-compat.a
 $(LIBCOMPAT): always
-	(cd openbsd-compat && $(MAKE))
+	(cd openbsd-compat && $(MAKE) libopenbsd-compat.a)
+LIBCOMPAT_PIC=openbsd-compat/libopenbsd-compat-pic.a
+$(LIBCOMPAT_PIC): always
+	(cd openbsd-compat && $(MAKE) libopenbsd-compat-pic.a)
 always:
 
 libssh.a: $(LIBSSH_OBJS)
 	$(AR) rv $@ $(LIBSSH_OBJS)
+	$(RANLIB) $@
+
+libssh-pic.a: $(LIBSSH_OBJS:.o=.lo)
+	$(AR) rv $@ $(LIBSSH_OBJS:.o=.lo)
 	$(RANLIB) $@
 
 ssh$(EXEEXT): $(LIBCOMPAT) libssh.a $(SSHOBJS)
@@ -241,6 +254,9 @@ sftp-server$(EXEEXT): $(LIBCOMPAT) libssh.a $(SFTPSERVER_OBJS)
 sftp$(EXEEXT): $(LIBCOMPAT) libssh.a $(SFTP_OBJS)
 	$(LD) -o $@ $(SFTP_OBJS) $(LDFLAGS) -lssh -lopenbsd-compat $(LIBS) $(LIBEDIT)
 
+pam_ssh_agent.so: $(PAM_SSH_AGENT_OBJS) libssh-pic.a $(LIBCOMPAT_PIC)
+	$(LD) -o $@ $(PAM_SSH_AGENT_OBJS) $(LDFLAGS_NOPIE) -shared -lpam -lssh-pic -lopenbsd-compat-pic $(LIBS)
+
 # test driver for the loginrec code - not built by default
 logintest: logintest.o $(LIBCOMPAT) libssh.a loginrec.o
 	$(LD) -o $@ logintest.o $(LDFLAGS) loginrec.o -lopenbsd-compat -lssh $(LIBS)
@@ -271,6 +287,7 @@ clean:	regressclean
 	rm -f *.out core survey
 	rm -f regress/check-perm$(EXEEXT)
 	rm -f regress/mkdtemp$(EXEEXT)
+	rm -f regress/pam-ssh-agent-test$(EXEEXT)
 	rm -f regress/unittests/test_helper/*.a
 	rm -f regress/unittests/test_helper/*.o
 	rm -f regress/unittests/sshbuf/*.o
@@ -304,6 +321,7 @@ distclean:	regressclean
 	rm -rf autom4te.cache
 	rm -f regress/check-perm
 	rm -f regress/mkdtemp
+	rm -f regress/pam-ssh-agent-test
 	rm -f regress/unittests/test_helper/*.a
 	rm -f regress/unittests/test_helper/*.o
 	rm -f regress/unittests/sshbuf/*.o
@@ -521,6 +539,9 @@ regress/mkdtemp$(EXEEXT): $(srcdir)/regress/mkdtemp.c $(REGRESSLIBS)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(srcdir)/regress/mkdtemp.c \
 	$(LDFLAGS) -lssh -lopenbsd-compat -lssh -lopenbsd-compat $(LIBS)
 
+regress/pam-ssh-agent-test$(EXEEXT): $(srcdir)/regress/pam-ssh-agent-test.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(srcdir)/regress/pam-ssh-agent-test.c $(LDFLAGS) -lpamtest
+
 UNITTESTS_TEST_HELPER_OBJS=\
 	regress/unittests/test_helper/test_helper.o \
 	regress/unittests/test_helper/fuzz.o
@@ -650,6 +671,7 @@ regress-binaries: regress-prep $(LIBCOMPAT) \
 	regress/netcat$(EXEEXT) \
 	regress/check-perm$(EXEEXT) \
 	regress/mkdtemp$(EXEEXT) \
+	$(PAM_SSH_AGENT_TEST) \
 	$(SK_DUMMY_LIBRARY)
 
 regress-unit-binaries: regress-prep $(REGRESSLIBS) \
@@ -686,6 +708,7 @@ interop-tests t-exec file-tests: regress-prep regress-binaries $(TARGETS)
 		PATH="$${BUILDDIR}:$${PATH}" \
 		TEST_ENV=MALLOC_OPTIONS="@TEST_MALLOC_OPTIONS@" \
 		TEST_MALLOC_OPTIONS="@TEST_MALLOC_OPTIONS@" \
+		TEST_PAM_SSH_AGENT="$(or $(PAM_SSH_AGENT_TEST),no)" \
 		TEST_SSH_SCP="$${BUILDDIR}/scp" \
 		TEST_SSH_SSH="$${BUILDDIR}/ssh" \
 		TEST_SSH_SSHD="$${BUILDDIR}/sshd" \

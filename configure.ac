@@ -392,6 +392,7 @@ AC_CHECK_HEADERS([ \
 	ifaddrs.h \
 	inttypes.h \
 	langinfo.h \
+	libpamtest.h \
 	limits.h \
 	locale.h \
 	login.h \
@@ -401,12 +402,14 @@ AC_CHECK_HEADERS([ \
 	netdb.h \
 	netgroup.h \
 	pam/pam_appl.h \
+	pam/pam_modules.h \
 	paths.h \
 	poll.h \
 	pty.h \
 	readpassphrase.h \
 	rpc/types.h \
 	security/pam_appl.h \
+	security/pam_modules.h \
 	sha2.h \
 	shadow.h \
 	stddef.h \
@@ -3352,6 +3355,37 @@ AC_ARG_WITH([pam],
 	]
 )
 
+PAM_SSH_AGENT_MSG="no"
+AC_ARG_WITH([pam-ssh-agent],
+	[  --with-pam-ssh-agent    Build PAM module for ssh-agent authentication],
+	[
+		if test "x$withval" != "xno" ; then
+			if test "x$ac_cv_header_security_pam_modules_h" != "xyes" && \
+			   test "x$ac_cv_header_pam_pam_modules_h" != "xyes" ; then
+				AC_MSG_ERROR([PAM headers not found])
+			fi
+
+			AC_SUBST(PAM_SSH_AGENT, [pam_ssh_agent.so])
+			PAM_SSH_AGENT_MSG="yes"
+
+			saved_LIBS="$LIBS"
+			AC_CHECK_LIB([pam_wrapper], [pam_start], , [have_pam_wrapper=no])
+			AC_CHECK_LIB([pamtest], [pamtest_strerror], , [have_pamtest=no])
+			LIBS="$saved_LIBS"
+
+			if test "x$have_pam_wrapper" = "xno" || test "x$have_pamtest" = "xno" ; then
+				PAM_SSH_AGENT_MSG="yes (for testing, install pam_wrapper and libpamtest-dev)"
+			else
+				if test "x$ac_cv_header_libpamtest_h" = "xyes" ; then
+					AC_SUBST(PAM_SSH_AGENT_TEST, [regress/pam-ssh-agent-test\$\(EXEEXT\)])
+				else
+					AC_MSG_ERROR([libpamtest headers not found])
+				fi
+			fi
+		fi
+	]
+)
+
 AC_ARG_WITH([pam-service],
 	[  --with-pam-service=name Specify PAM service name ],
 	[
@@ -5452,6 +5486,7 @@ echo "          sshd superuser user PATH: $J"
 fi
 echo "                    Manpage format: $MANTYPE"
 echo "                       PAM support: $PAM_MSG"
+echo "             PAM ssh-agent support: $PAM_SSH_AGENT_MSG"
 echo "                   OSF SIA support: $SIA_MSG"
 echo "                 KerberosV support: $KRB5_MSG"
 echo "                   SELinux support: $SELINUX_MSG"

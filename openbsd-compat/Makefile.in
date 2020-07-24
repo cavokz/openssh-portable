@@ -17,6 +17,8 @@ INSTALL=@INSTALL@
 LDFLAGS=-L. @LDFLAGS@
 LDFLAGS_NOPIE=-L. -Lopenbsd-compat/ @LDFLAGS_NOPIE@
 
+.SUFFIXES: .lo
+
 OPENBSD=base64.o \
 	basename.o \
 	bcrypt_pbkdf.o \
@@ -101,7 +103,7 @@ PORTS=	port-aix.o \
 .c.o:
 	$(CC) $(CFLAGS_NOPIE) $(PICFLAG) $(CPPFLAGS) -c $<
 
-all: libopenbsd-compat.a
+all: libopenbsd-compat.a libopenbsd-compat-pic.a
 
 $(COMPAT): ../config.h
 $(OPENBSD): ../config.h
@@ -111,8 +113,15 @@ libopenbsd-compat.a:  $(COMPAT) $(OPENBSD) $(PORTS)
 	$(AR) rv $@ $(COMPAT) $(OPENBSD) $(PORTS)
 	$(RANLIB) $@
 
+libopenbsd-compat-pic.a: $(COMPAT:.o=.lo) $(OPENBSD:.o=.lo) $(PORTS:.o=.lo)
+	$(AR) rv $@ $^
+	$(RANLIB) $@
+
+.c.lo: Makefile.in config.h
+	$(CC) $(CFLAGS_NOPIE) $(PICFLAG) $(CPPFLAGS) -c $< -o $@
+
 clean:
-	rm -f *.o *.a core
+	rm -f *.o *.lo *.a core
 
 distclean: clean
 	rm -f Makefile *~
